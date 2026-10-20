@@ -60,12 +60,14 @@ app.use(
   })
 );
 
-// Rate limiting: 100 requests per 15 minutes per IP
+// Rate limiting: 100 requests per 15 minutes per IP in production (1000 in dev)
+// Excludes the /health endpoint so health monitors and uptime probes are never blocked.
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/health',
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 15 minutes'
