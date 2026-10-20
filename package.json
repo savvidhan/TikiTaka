@@ -1,0 +1,22 @@
+{
+  "name": "tikitaka-workspace",
+  "version": "1.0.0",
+  "description": "TikiTaka — Football team, player, match scheduling, and live score management platform",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "start:backend": "npm --prefix backend start"
+  },
+  "keywords": [
+    "tikitaka",
+    "football",
+    "mongodb",
+    "mongoose",
+    "express",
+    "react",
+    "vite"
+  ],
+  "author": "",
+  "license": "ISC"
+}
