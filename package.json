@@ -6,7 +6,8 @@
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build",
-    "start:backend": "npm --prefix backend start"
+    "start:backend": "npm --prefix backend start",
+    "seed:backend": "npm --prefix backend run seed"
   },
   "keywords": [
     "tikitaka",
