@@ -30,7 +30,9 @@ import ErrorState from '../components/common/ErrorState';
 import Badge from '../components/common/Badge';
 import ConfirmModal from '../components/common/ConfirmModal';
 
-const GOAL_TYPES = ['OpenPlay', 'Penalty', 'FreeKick', 'OwnGoal'];
+// Supported in-game goal types for Live Match Center
+// Note: 'OwnGoal' is temporarily omitted in this milestone pending opposite-roster attribution handling
+const GOAL_TYPES = ['OpenPlay', 'Penalty', 'FreeKick'];
 
 export default function MatchCenterPage() {
   const { id } = useParams();

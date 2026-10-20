@@ -2,15 +2,34 @@
  * Centralized TikiTaka API Client
  */
 
-const API_BASE_URL =
+const configuredBaseUrl =
   import.meta.env.VITE_API_BASE_URL ||
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:5000/api';
+  import.meta.env.VITE_API_URL;
+
+// Prevent accidental production builds from silently pointing to localhost:5000
+const isProd = import.meta.env.PROD;
+
+if (isProd && !configuredBaseUrl) {
+  console.error(
+    'CRITICAL CONFIGURATION ERROR: TikiTaka frontend is running in production mode, but neither VITE_API_BASE_URL nor VITE_API_URL is configured. Set VITE_API_BASE_URL in your hosting environment (e.g. Vercel/Render).'
+  );
+}
+
+const API_BASE_URL = configuredBaseUrl || (isProd ? '' : 'http://localhost:5000/api');
 
 /**
  * Universal fetch wrapper with error handling and JSON normalization
  */
 export async function apiClient(endpoint, options = {}) {
+  if (isProd && !configuredBaseUrl) {
+    const configError = new Error(
+      'Production API endpoint is unconfigured. VITE_API_BASE_URL must be defined in your deployment environment.'
+    );
+    configError.status = 503;
+    configError.isConfigurationError = true;
+    throw configError;
+  }
+
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${cleanEndpoint}`;
 
@@ -50,6 +69,17 @@ export async function apiClient(endpoint, options = {}) {
  * Check backend health & database connectivity
  */
 export async function checkApiHealth() {
+  if (isProd && !configuredBaseUrl) {
+    return {
+      isReachable: false,
+      isDbConnected: false,
+      serverStatus: 'unconfigured',
+      dbStatus: 'unreachable',
+      latency: null,
+      error: 'Production API endpoint is unconfigured. VITE_API_BASE_URL environment variable is missing.'
+    };
+  }
+
   const startTime = performance.now();
   try {
     const response = await fetch(`${API_BASE_URL}/health`, {

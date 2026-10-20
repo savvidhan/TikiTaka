@@ -9,20 +9,51 @@ import matchRoutes from './routes/matchRoutes.js';
 
 const app = express();
 
+// Reverse Proxy Configuration:
+// Trust the first-hop reverse proxy (e.g. Render, Railway, Fly.io, Heroku, AWS ALB, Nginx).
+// This ensures req.ip correctly reflects the client's actual IP address for rate limiting
+// rather than the reverse proxy's internal load balancer IP.
+app.set('trust proxy', 1);
+
 // Security HTTP headers
 app.use(helmet());
 
-// CORS configuration
-const frontendOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+/**
+ * Parse and normalize allowed origins from FRONTEND_URL environment variable.
+ * Supports comma-separated list of URLs and strips any trailing slashes.
+ */
+export const getAllowedOrigins = () => {
+  const envOrigins = (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  const defaultOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+  const allOrigins = new Set([...defaultOrigins, ...envOrigins]);
+  return Array.from(allOrigins);
+};
+
+// CORS configuration:
+// Supports comma-separated frontend origins, strips trailing slashes, and rejects
+// unapproved cross-origin requests safely without throwing an unhandled application error.
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server) or matching origin
-      if (!origin || origin === frontendOrigin || origin === 'http://127.0.0.1:5173') {
-        callback(null, true);
-      } else {
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      // 1. Allow requests with no origin (e.g. mobile apps, server-to-server, curl)
+      if (!origin) {
+        return callback(null, true);
       }
+
+      // 2. Normalize incoming origin by removing trailing slashes
+      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+      const allowedOrigins = getAllowedOrigins();
+
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      // 3. Reject unapproved origins without throwing an application error
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
