@@ -110,6 +110,26 @@ export async function getTeamById(id) {
   return apiClient(`/teams/${id}`);
 }
 
+export async function createTeam(teamData) {
+  return apiClient('/teams', {
+    method: 'POST',
+    body: JSON.stringify(teamData)
+  });
+}
+
+export async function updateTeam(id, teamData) {
+  return apiClient(`/teams/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(teamData)
+  });
+}
+
+export async function deleteTeam(id) {
+  return apiClient(`/teams/${id}`, {
+    method: 'DELETE'
+  });
+}
+
 // ==========================================
 // PLAYERS API METHODS
 // ==========================================
@@ -126,6 +146,26 @@ export async function getPlayers(params = {}) {
 
 export async function getPlayerById(id) {
   return apiClient(`/players/${id}`);
+}
+
+export async function createPlayer(playerData) {
+  return apiClient('/players', {
+    method: 'POST',
+    body: JSON.stringify(playerData)
+  });
+}
+
+export async function updatePlayer(id, playerData) {
+  return apiClient(`/players/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(playerData)
+  });
+}
+
+export async function deletePlayer(id) {
+  return apiClient(`/players/${id}`, {
+    method: 'DELETE'
+  });
 }
 
 // ==========================================
@@ -145,6 +185,40 @@ export async function getMatches(params = {}) {
 
 export async function getMatchById(id) {
   return apiClient(`/matches/${id}`);
+}
+
+export async function createMatch(matchData) {
+  return apiClient('/matches', {
+    method: 'POST',
+    body: JSON.stringify(matchData)
+  });
+}
+
+export async function updateMatch(id, matchData) {
+  return apiClient(`/matches/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(matchData)
+  });
+}
+
+export async function updateMatchStatus(id, status) {
+  return apiClient(`/matches/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
+  });
+}
+
+export async function recordGoal(id, goalData) {
+  return apiClient(`/matches/${id}/goals`, {
+    method: 'POST',
+    body: JSON.stringify(goalData)
+  });
+}
+
+export async function deleteMatch(id) {
+  return apiClient(`/matches/${id}`, {
+    method: 'DELETE'
+  });
 }
 
 // ==========================================

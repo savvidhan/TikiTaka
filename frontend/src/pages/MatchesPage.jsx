@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   Trophy, 
   Calendar, 
@@ -9,15 +10,23 @@ import {
   Zap, 
   CheckCircle2,
   AlertCircle,
-  Radio
+  Radio,
+  Plus,
+  Edit2,
+  Trash2,
+  Play
 } from 'lucide-react';
-import { getMatches, getMatchById } from '../services/api';
+import { getMatches, getMatchById, deleteMatch } from '../services/api';
 import LoadingState from '../components/common/LoadingState';
 import ErrorState from '../components/common/ErrorState';
 import EmptyState from '../components/common/EmptyState';
 import Badge from '../components/common/Badge';
+import ConfirmModal from '../components/common/ConfirmModal';
+import MatchFormModal from '../components/matches/MatchFormModal';
 
 export default function MatchesPage() {
+  const navigate = useNavigate();
+
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,6 +37,17 @@ export default function MatchesPage() {
   const [matchDetail, setMatchDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState(null);
+
+  // Form Modal (Schedule / Edit)
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingMatch, setEditingMatch] = useState(null);
+
+  // Delete Confirmation Modal
+  const [matchToDelete, setMatchToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Feedback banner
+  const [feedback, setFeedback] = useState(null);
 
   const fetchMatches = async () => {
     setLoading(true);
@@ -49,6 +69,14 @@ export default function MatchesPage() {
     fetchMatches();
   }, [statusFilter]);
 
+  // Auto-dismiss feedback after 4 seconds
+  useEffect(() => {
+    if (feedback) {
+      const timer = setTimeout(() => setFeedback(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
+
   const handleOpenMatchModal = async (id) => {
     setSelectedMatchId(id);
     setLoadingDetail(true);
@@ -69,6 +97,59 @@ export default function MatchesPage() {
     setDetailError(null);
   };
 
+  const handleOpenScheduleForm = () => {
+    setEditingMatch(null);
+    setIsFormOpen(true);
+  };
+
+  const handleOpenEditForm = (match, e) => {
+    if (e) e.stopPropagation();
+    setEditingMatch(match);
+    setIsFormOpen(true);
+  };
+
+  const handlePromptDelete = (match, e) => {
+    if (e) e.stopPropagation();
+    setMatchToDelete(match);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!matchToDelete) return;
+    setDeleting(true);
+    try {
+      const res = await deleteMatch(matchToDelete._id);
+      setFeedback({
+        type: 'success',
+        message: res.message || `Match fixture "${matchToDelete.title}" deleted successfully.`
+      });
+      setMatchToDelete(null);
+      if (selectedMatchId === matchToDelete._id) {
+        handleCloseModal();
+      }
+      fetchMatches();
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        message: err.message || 'Failed to delete fixture.'
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleFormSuccess = (savedMatch, mode) => {
+    setFeedback({
+      type: 'success',
+      message: mode === 'created'
+        ? `Match fixture "${savedMatch.title}" scheduled successfully!`
+        : `Match fixture "${savedMatch.title}" updated successfully!`
+    });
+    fetchMatches();
+    if (selectedMatchId && selectedMatchId === savedMatch._id) {
+      handleOpenMatchModal(savedMatch._id);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -86,7 +167,41 @@ export default function MatchesPage() {
             Grassroots tournament schedules, live scoring events, and official scorecards.
           </p>
         </div>
+
+        <button
+          onClick={handleOpenScheduleForm}
+          className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-lg shadow-sky-950/40 transition-all cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Schedule Match</span>
+        </button>
       </div>
+
+      {/* Feedback banner */}
+      {feedback && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between text-xs animate-in fade-in duration-200 ${
+            feedback.type === 'success'
+              ? 'bg-emerald-950/70 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-950/70 border-red-500/30 text-red-300'
+          }`}
+        >
+          <div className="flex items-center space-x-2.5">
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            )}
+            <span className="font-medium">{feedback.message}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Status Filter Tabs */}
       <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto w-full sm:w-auto">
@@ -106,7 +221,7 @@ export default function MatchesPage() {
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {tab.value === 'Live' && <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />}
+            {tab.value === 'Live' && <Radio className="w-3 h-3 text-red-400 animate-pulse" />}
             <span>{tab.label}</span>
           </button>
         ))}
@@ -127,20 +242,23 @@ export default function MatchesPage() {
         <EmptyState
           icon={Trophy}
           title="No Matches Found"
-          description={
+          message={
             statusFilter
               ? `There are currently no matches in "${statusFilter}" status.`
-              : 'There are currently no fixtures scheduled in the platform.'
+              : 'There are currently no fixtures scheduled in the platform. Use the button above to schedule your first fixture.'
           }
-          actionLabel={statusFilter ? 'Show All Matches' : undefined}
-          onAction={statusFilter ? () => setStatusFilter('') : undefined}
+          actionLabel={statusFilter ? 'Show All Matches' : '+ Schedule Match'}
+          onAction={statusFilter ? () => setStatusFilter('') : handleOpenScheduleForm}
         />
       )}
 
       {!loading && !error && matches.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {matches.map((match) => {
-            const hasStartedOrFinished = match.status === 'Completed' || match.status === 'Live';
+            const isLive = match.status === 'Live';
+            const isScheduled = match.status === 'Scheduled';
+            const isCompleted = match.status === 'Completed';
+
             return (
               <div
                 key={match._id}
@@ -149,62 +267,53 @@ export default function MatchesPage() {
                 <div>
                   {/* Card Header */}
                   <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-bold text-slate-300">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
                         {match.competitionName || 'Tournament Fixture'}
                       </span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-[11px] text-slate-500">{match.matchType}</span>
+                      <h3 className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors">
+                        {match.title}
+                      </h3>
                     </div>
 
                     <Badge variant={match.status}>{match.status}</Badge>
                   </div>
 
-                  {/* Title */}
-                  <h3 className="text-sm font-bold text-white mt-3 group-hover:text-emerald-400 transition-colors">
-                    {match.title}
-                  </h3>
-
-                  {/* Teams vs Scoreboard Display */}
-                  <div className="mt-4 p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 flex items-center justify-between">
-                    {/* Home Team */}
-                    <div className="flex-1 text-left">
-                      <span className="text-sm font-black text-white block">
-                        {match.homeTeam?.name || 'Home Team'}
-                      </span>
-                      <span className="text-[10px] font-mono text-emerald-400 font-semibold">
-                        {match.homeTeam?.shortName || 'HOME'}
+                  {/* Team vs Team Scoreboard */}
+                  <div className="py-4 my-2 flex items-center justify-between px-3 rounded-xl bg-slate-950/60 border border-slate-800/50">
+                    <div className="flex items-center space-x-2.5 flex-1 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs font-['Outfit'] shrink-0">
+                        {match.homeTeam?.shortName || match.homeTeam?.name?.slice(0, 3).toUpperCase() || 'H'}
+                      </div>
+                      <span className="text-sm font-bold text-white truncate">
+                        {match.homeTeam?.name || 'Home Club'}
                       </span>
                     </div>
 
-                    {/* Score / VS Center */}
-                    <div className="px-4 text-center">
-                      {hasStartedOrFinished ? (
-                        <div className="px-3 py-1 rounded-lg bg-slate-900 border border-slate-700/80 font-mono font-black text-lg text-emerald-400 tracking-wider">
-                          {match.homeScore} - {match.awayScore}
-                        </div>
-                      ) : (
-                        <span className="px-3 py-1 rounded-lg bg-slate-900 text-slate-400 text-xs font-black uppercase tracking-wider font-mono">
-                          VS
-                        </span>
-                      )}
+                    <div className="px-4 py-1.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center space-x-3 shrink-0 mx-2">
+                      <span className="text-base font-black text-white font-mono">
+                        {match.status === 'Scheduled' ? '-' : (match.homeScore ?? 0)}
+                      </span>
+                      <span className="text-slate-600 font-light">:</span>
+                      <span className="text-base font-black text-white font-mono">
+                        {match.status === 'Scheduled' ? '-' : (match.awayScore ?? 0)}
+                      </span>
                     </div>
 
-                    {/* Away Team */}
-                    <div className="flex-1 text-right">
-                      <span className="text-sm font-black text-white block">
-                        {match.awayTeam?.name || 'Away Team'}
+                    <div className="flex items-center space-x-2.5 flex-1 min-w-0 justify-end">
+                      <span className="text-sm font-bold text-white truncate text-right">
+                        {match.awayTeam?.name || 'Away Club'}
                       </span>
-                      <span className="text-[10px] font-mono text-emerald-400 font-semibold">
-                        {match.awayTeam?.shortName || 'AWAY'}
-                      </span>
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs font-['Outfit'] shrink-0">
+                        {match.awayTeam?.shortName || match.awayTeam?.name?.slice(0, 3).toUpperCase() || 'A'}
+                      </div>
                     </div>
                   </div>
 
                   {/* Fixture Metadata */}
                   <div className="mt-4 space-y-1.5 text-xs text-slate-400">
                     <div className="flex items-center text-slate-400">
-                      <Calendar className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
                       <span>Kick-off:</span>
                       <span className="font-medium text-slate-300 ml-1.5">
                         {new Date(match.scheduledAt).toLocaleString(undefined, {
@@ -218,13 +327,13 @@ export default function MatchesPage() {
                     </div>
 
                     <div className="flex items-center text-slate-400">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                      <MapPin className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
                       <span>Venue:</span>
                       <span className="font-medium text-slate-300 ml-1.5">{match.venue || 'TBD Ground'}</span>
                     </div>
 
                     <div className="flex items-center text-slate-400">
-                      <Clock className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                      <Clock className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
                       <span>Regulation:</span>
                       <span className="font-medium text-slate-300 ml-1.5">{match.durationMinutes} Minutes</span>
                     </div>
@@ -233,7 +342,7 @@ export default function MatchesPage() {
                   {/* Goal events preview */}
                   {match.goals && match.goals.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-slate-800/60">
-                      <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
                         Goals Summary:
                       </span>
                       <div className="flex flex-wrap gap-1.5">
@@ -250,15 +359,48 @@ export default function MatchesPage() {
                   )}
                 </div>
 
-                {/* Scorecard Action */}
-                <div className="mt-5 pt-3 border-t border-slate-800/80">
+                {/* Card Action Footer */}
+                <div className="mt-5 pt-3 border-t border-slate-800/80 flex items-center space-x-2">
+                  <Link
+                    to={`/matches/${match._id}/manage`}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm ${
+                      isLive 
+                        ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-950/40 animate-pulse' 
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
+                    }`}
+                  >
+                    {isLive ? <Radio className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                    <span>{isLive ? 'Live Console' : isScheduled ? 'Manage Fixture' : 'Match Center'}</span>
+                  </Link>
+
                   <button
                     onClick={() => handleOpenMatchModal(match._id)}
-                    className="w-full py-2 bg-slate-950 hover:bg-emerald-600/10 text-slate-300 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    className="py-2 px-3 bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                    title="View Scorecard Modal"
                   >
-                    <span>View Match Scorecard</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    Scorecard
                   </button>
+
+                  {isScheduled && (
+                    <>
+                      <button
+                        onClick={(e) => handleOpenEditForm(match, e)}
+                        className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 rounded-xl transition-colors cursor-pointer"
+                        title="Edit Fixture"
+                        aria-label="Edit Fixture"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => handlePromptDelete(match, e)}
+                        className="p-2 bg-slate-950 hover:bg-red-500/10 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/30 rounded-xl transition-colors cursor-pointer"
+                        title="Delete Fixture"
+                        aria-label="Delete Fixture"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -268,7 +410,7 @@ export default function MatchesPage() {
 
       {/* Match Scorecard Modal */}
       {selectedMatchId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
@@ -281,17 +423,33 @@ export default function MatchesPage() {
                 </h2>
               </div>
 
-              <button
-                onClick={handleCloseModal}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center space-x-2">
+                {matchDetail && (
+                  <Link
+                    to={`/matches/${matchDetail._id}/manage`}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                  >
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>Open Live Center</span>
+                  </Link>
+                )}
+                <button
+                  onClick={handleCloseModal}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors ml-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Modal Body */}
+            {/* Modal Content */}
             <div className="p-6 overflow-y-auto space-y-6">
-              {loadingDetail && <LoadingState message="Fetching official match details..." />}
+              {loadingDetail && (
+                <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-xs text-slate-400">Loading scorecard data...</p>
+                </div>
+              )}
 
               {detailError && (
                 <ErrorState
@@ -303,35 +461,34 @@ export default function MatchesPage() {
 
               {!loadingDetail && !detailError && matchDetail && (
                 <>
-                  {/* Prominent Scorecard Box */}
-                  <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
-                    {/* Home Club */}
-                    <div className="flex-1">
-                      <span className="text-base font-black text-white block">
+                  {/* Scoreboard Block */}
+                  <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                    <div className="text-center flex-1">
+                      <span className="text-xs text-slate-400 block mb-1">Home</span>
+                      <h3 className="font-extrabold text-white text-base font-['Outfit']">
                         {matchDetail.homeTeam?.name}
-                      </span>
-                      <span className="text-xs text-slate-400 font-mono">
-                        Ground: {matchDetail.homeTeam?.homeGround || 'Main Ground'}
+                      </h3>
+                      <span className="text-[10px] font-mono text-emerald-400">
+                        [{matchDetail.homeTeam?.shortName || 'H'}]
                       </span>
                     </div>
 
-                    {/* Score Center */}
-                    <div className="flex flex-col items-center">
-                      <span className="text-3xl font-black text-emerald-400 font-mono tracking-widest">
-                        {matchDetail.homeScore} - {matchDetail.awayScore}
-                      </span>
-                      <Badge variant={matchDetail.status} className="mt-1.5">
+                    <div className="px-6 text-center">
+                      <div className="text-3xl font-black text-white font-mono tracking-wider">
+                        {matchDetail.status === 'Scheduled' ? '-' : (matchDetail.homeScore ?? 0)} - {matchDetail.status === 'Scheduled' ? '-' : (matchDetail.awayScore ?? 0)}
+                      </div>
+                      <Badge variant={matchDetail.status} className="mt-2">
                         {matchDetail.status}
                       </Badge>
                     </div>
 
-                    {/* Away Club */}
-                    <div className="flex-1 sm:text-right">
-                      <span className="text-base font-black text-white block">
+                    <div className="text-center flex-1">
+                      <span className="text-xs text-slate-400 block mb-1">Away</span>
+                      <h3 className="font-extrabold text-white text-base font-['Outfit']">
                         {matchDetail.awayTeam?.name}
-                      </span>
-                      <span className="text-xs text-slate-400 font-mono">
-                        Ground: {matchDetail.awayTeam?.homeGround || 'Main Ground'}
+                      </h3>
+                      <span className="text-[10px] font-mono text-emerald-400">
+                        [{matchDetail.awayTeam?.shortName || 'A'}]
                       </span>
                     </div>
                   </div>
@@ -340,12 +497,14 @@ export default function MatchesPage() {
                   <div>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
                       <Zap className="w-3.5 h-3.5 text-emerald-400" />
-                      Goal Timeline ({matchDetail.goals?.length || 0})
+                      Official Match Goals ({matchDetail.goals?.length || 0})
                     </h3>
 
                     {(!matchDetail.goals || matchDetail.goals.length === 0) ? (
-                      <p className="text-xs text-slate-500 py-4 text-center bg-slate-950/50 rounded-xl border border-slate-800">
-                        No goals recorded for this match yet.
+                      <p className="text-xs text-slate-500 py-6 text-center bg-slate-950/40 rounded-xl border border-slate-800">
+                        {matchDetail.status === 'Scheduled'
+                          ? 'Goals will be recorded once the match kicks off in Live status.'
+                          : 'No goals recorded in this match.'}
                       </p>
                     ) : (
                       <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-slate-950/60">
@@ -396,6 +555,30 @@ export default function MatchesPage() {
           </div>
         </div>
       )}
+
+      {/* Match Form Modal */}
+      <MatchFormModal
+        isOpen={isFormOpen}
+        match={editingMatch}
+        onClose={() => {
+          setIsFormOpen(false);
+          setEditingMatch(null);
+        }}
+        onSuccess={handleFormSuccess}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(matchToDelete)}
+        title="Delete Match Fixture"
+        message={`Are you sure you want to remove the fixture "${matchToDelete?.title}"?`}
+        actionNote="TikiTaka Fixture Rules: Completed matches cannot be deleted to preserve historic scores and records. Only Scheduled or Cancelled fixtures can be cleanly removed."
+        confirmText="Confirm Delete"
+        confirmVariant="danger"
+        loading={deleting}
+        onClose={() => setMatchToDelete(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

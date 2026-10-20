@@ -52,14 +52,28 @@ export default function DashboardPage({ healthState }) {
           </p>
         </div>
 
-        {/* Database connectivity badge */}
-        <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold border ${
-          healthState?.isDbConnected 
-            ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30' 
-            : 'bg-amber-950/60 text-amber-300 border-amber-500/30'
-        }`}>
-          <Database className="w-3.5 h-3.5" />
-          <span>MongoDB {healthState?.isDbConnected ? 'Atlas Live' : 'Disconnected'}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/matches"
+            className="px-3.5 py-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors"
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Schedule Match</span>
+          </Link>
+          <Link
+            to="/teams"
+            className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Create Team</span>
+          </Link>
+          <Link
+            to="/players"
+            className="px-3.5 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Register Player</span>
+          </Link>
         </div>
       </div>
 
@@ -212,7 +226,7 @@ export default function DashboardPage({ healthState }) {
                       </div>
                     </div>
 
-                    {/* Scoreline */}
+                    {/* Scoreline & Manage action */}
                     <div className="flex items-center gap-3 self-end md:self-center">
                       <div className="px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-center">
                         <span className="text-base font-black text-white">
@@ -221,6 +235,13 @@ export default function DashboardPage({ healthState }) {
                             : 'VS'}
                         </span>
                       </div>
+                      <Link
+                        to={`/matches/${match._id}/manage`}
+                        className="p-2 bg-slate-900 hover:bg-emerald-600/20 text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/30 rounded-xl transition-colors text-xs font-semibold"
+                        title="Open Live Match Center"
+                      >
+                        Manage
+                      </Link>
                     </div>
                   </div>
                 ))

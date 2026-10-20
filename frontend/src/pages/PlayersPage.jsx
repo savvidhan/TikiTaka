@@ -9,13 +9,20 @@ import {
   Globe, 
   Footprints,
   ChevronRight,
-  Filter
+  Filter,
+  Plus,
+  Edit2,
+  Trash2,
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
-import { getPlayers, getPlayerById } from '../services/api';
+import { getPlayers, getPlayerById, deletePlayer } from '../services/api';
 import LoadingState from '../components/common/LoadingState';
 import ErrorState from '../components/common/ErrorState';
 import EmptyState from '../components/common/EmptyState';
 import Badge from '../components/common/Badge';
+import ConfirmModal from '../components/common/ConfirmModal';
+import PlayerFormModal from '../components/players/PlayerFormModal';
 
 export default function PlayersPage() {
   const [players, setPlayers] = useState([]);
@@ -33,6 +40,17 @@ export default function PlayersPage() {
   const [playerDetail, setPlayerDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState(null);
+
+  // Form Modal (Create / Edit)
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingPlayer, setEditingPlayer] = useState(null);
+
+  // Delete Confirmation Modal
+  const [playerToDelete, setPlayerToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Feedback banner
+  const [feedback, setFeedback] = useState(null);
 
   const fetchPlayers = async () => {
     setLoading(true);
@@ -59,6 +77,14 @@ export default function PlayersPage() {
     return () => clearTimeout(timer);
   }, [searchTerm, positionFilter, footFilter, activeFilter]);
 
+  // Auto-dismiss feedback after 4 seconds
+  useEffect(() => {
+    if (feedback) {
+      const timer = setTimeout(() => setFeedback(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
+
   const handleOpenPlayerModal = async (id) => {
     setSelectedPlayerId(id);
     setLoadingDetail(true);
@@ -77,6 +103,59 @@ export default function PlayersPage() {
     setSelectedPlayerId(null);
     setPlayerDetail(null);
     setDetailError(null);
+  };
+
+  const handleOpenCreateForm = () => {
+    setEditingPlayer(null);
+    setIsFormOpen(true);
+  };
+
+  const handleOpenEditForm = (player, e) => {
+    if (e) e.stopPropagation();
+    setEditingPlayer(player);
+    setIsFormOpen(true);
+  };
+
+  const handlePromptDelete = (player, e) => {
+    if (e) e.stopPropagation();
+    setPlayerToDelete(player);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!playerToDelete) return;
+    setDeleting(true);
+    try {
+      const res = await deletePlayer(playerToDelete._id);
+      setFeedback({
+        type: 'success',
+        message: res.message || `Player "${playerToDelete.displayName || playerToDelete.firstName}" processed successfully.`
+      });
+      setPlayerToDelete(null);
+      if (selectedPlayerId === playerToDelete._id) {
+        handleCloseModal();
+      }
+      fetchPlayers();
+    } catch (err) {
+      setFeedback({
+        type: 'error',
+        message: err.message || 'Failed to delete player.'
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleFormSuccess = (savedPlayer, mode) => {
+    setFeedback({
+      type: 'success',
+      message: mode === 'created'
+        ? `Player "${savedPlayer.displayName || savedPlayer.firstName}" registered successfully!`
+        : `Player "${savedPlayer.displayName || savedPlayer.firstName}" updated successfully!`
+    });
+    fetchPlayers();
+    if (selectedPlayerId && selectedPlayerId === savedPlayer._id) {
+      handleOpenPlayerModal(savedPlayer._id);
+    }
   };
 
   const resetFilters = () => {
@@ -103,7 +182,41 @@ export default function PlayersPage() {
             Grassroots football talent, primary positions, preferred foot, and club affiliations.
           </p>
         </div>
+
+        <button
+          onClick={handleOpenCreateForm}
+          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Register Player</span>
+        </button>
       </div>
+
+      {/* Feedback banner */}
+      {feedback && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between text-xs animate-in fade-in duration-200 ${
+            feedback.type === 'success'
+              ? 'bg-emerald-950/70 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-950/70 border-red-500/30 text-red-300'
+          }`}
+        >
+          <div className="flex items-center space-x-2.5">
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+            )}
+            <span className="font-medium">{feedback.message}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Filter and Search Controls */}
       <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
@@ -162,28 +275,33 @@ export default function PlayersPage() {
             className="px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-emerald-500/50 transition-colors cursor-pointer"
           >
             <option value="">All Statuses</option>
-            <option value="true">Active Players</option>
+            <option value="true">Active Only</option>
             <option value="false">Inactive</option>
           </select>
 
           {(searchTerm || positionFilter || footFilter || activeFilter) && (
             <button
               onClick={resetFilters}
-              className="p-2 text-slate-400 hover:text-rose-400 hover:bg-slate-900 rounded-xl border border-slate-800 transition-colors"
-              title="Reset all filters"
+              className="px-3 py-2 text-xs font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              Reset
             </button>
           )}
         </div>
       </div>
 
-      {/* Main Content */}
-      {loading && <LoadingState message="Fetching player rosters..." />}
+      {/* Main Content Area */}
+      {loading && (
+        <LoadingState 
+          count={6} 
+          type="cards" 
+          message="Loading football athletes from TikiTaka registry..." 
+        />
+      )}
 
-      {error && (
+      {error && !loading && (
         <ErrorState
-          title="Could Not Load Player Directory"
+          title="Could Not Load Players"
           message={error}
           onRetry={fetchPlayers}
         />
@@ -193,13 +311,13 @@ export default function PlayersPage() {
         <EmptyState
           icon={Users}
           title="No Players Found"
-          description={
+          message={
             searchTerm || positionFilter || footFilter || activeFilter
-              ? 'No players matched your active filter selections. Try adjusting or clearing your filters.'
-              : 'There are currently no squad players registered in the system.'
+              ? "No athletes match your selected filter criteria. Try refining or resetting your filters."
+              : "No players have been registered yet in the database. Use the button above to register your first player."
           }
-          actionLabel={searchTerm || positionFilter || footFilter || activeFilter ? 'Reset Filters' : undefined}
-          onAction={searchTerm || positionFilter || footFilter || activeFilter ? resetFilters : undefined}
+          actionLabel={searchTerm || positionFilter || footFilter || activeFilter ? 'Reset Filters' : '+ Register Player'}
+          onAction={searchTerm || positionFilter || footFilter || activeFilter ? resetFilters : handleOpenCreateForm}
         />
       )}
 
@@ -253,13 +371,29 @@ export default function PlayersPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-800/80">
+                <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center space-x-2">
                   <button
                     onClick={() => handleOpenPlayerModal(player._id)}
-                    className="w-full py-2 bg-slate-950 hover:bg-emerald-600/10 text-slate-300 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    className="flex-1 py-2 bg-slate-950 hover:bg-emerald-600/10 text-slate-300 hover:text-emerald-400 border border-slate-800 hover:border-emerald-500/30 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
-                    <span>Player Profile &amp; Clubs</span>
+                    <span>Profile</span>
                     <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => handleOpenEditForm(player, e)}
+                    className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 rounded-xl transition-colors cursor-pointer"
+                    title="Edit Player"
+                    aria-label="Edit Player"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => handlePromptDelete(player, e)}
+                    className="p-2 bg-slate-950 hover:bg-red-500/10 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/30 rounded-xl transition-colors cursor-pointer"
+                    title="Delete Player"
+                    aria-label="Delete Player"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -270,7 +404,7 @@ export default function PlayersPage() {
 
       {/* Player Profile Modal */}
       {selectedPlayerId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
               <div className="flex items-center space-x-3">
@@ -279,24 +413,54 @@ export default function PlayersPage() {
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-white font-['Outfit']">
-                    {playerDetail?.displayName || 'Player Profile'}
+                    {playerDetail?.displayName || `${playerDetail?.firstName || ''} ${playerDetail?.lastName || ''}`}
                   </h2>
                   <p className="text-xs text-slate-400">
-                    {playerDetail?.primaryPosition} • {playerDetail?.nationality || 'Grassroots'}
+                    {playerDetail?.nationality ? `${playerDetail.nationality} Citizen` : 'TikiTaka Registered Player'}
                   </p>
                 </div>
               </div>
 
-              <button
-                onClick={handleCloseModal}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center space-x-1">
+                {playerDetail && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        handleCloseModal();
+                        handleOpenEditForm(playerDetail, e);
+                      }}
+                      className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                      title="Edit Player"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        handlePromptDelete(playerDetail, e);
+                      }}
+                      className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Delete Player"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={handleCloseModal}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors ml-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-5">
-              {loadingDetail && <LoadingState message="Fetching player details and club records..." />}
+            <div className="p-6 overflow-y-auto space-y-6">
+              {loadingDetail && (
+                <div className="py-12 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-xs text-slate-400">Retrieving official player record...</p>
+                </div>
+              )}
 
               {detailError && (
                 <ErrorState
@@ -336,6 +500,13 @@ export default function PlayersPage() {
                       </span>
                     </div>
                   </div>
+
+                  {playerDetail.phone && (
+                    <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Contact Phone</span>
+                      <span className="font-mono text-white mt-0.5 block">{playerDetail.phone}</span>
+                    </div>
+                  )}
 
                   {/* Club Affiliations */}
                   <div>
@@ -378,6 +549,30 @@ export default function PlayersPage() {
           </div>
         </div>
       )}
+
+      {/* Player Form Modal */}
+      <PlayerFormModal
+        isOpen={isFormOpen}
+        player={editingPlayer}
+        onClose={() => {
+          setIsFormOpen(false);
+          setEditingPlayer(null);
+        }}
+        onSuccess={handleFormSuccess}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={Boolean(playerToDelete)}
+        title="Delete Player Record"
+        message={`Are you sure you want to remove player "${playerToDelete?.displayName || playerToDelete?.firstName}"?`}
+        actionNote="TikiTaka Reference-Aware Protection: If this player is part of an active team roster or has recorded match goals, the backend will safely deactivate the player instead of permanently deleting them, preserving historical fixture and squad statistics."
+        confirmText="Confirm Delete"
+        confirmVariant="danger"
+        loading={deleting}
+        onClose={() => setPlayerToDelete(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

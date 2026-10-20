@@ -5,6 +5,7 @@ import DashboardPage from './pages/DashboardPage';
 import TeamsPage from './pages/TeamsPage';
 import PlayersPage from './pages/PlayersPage';
 import MatchesPage from './pages/MatchesPage';
+import MatchCenterPage from './pages/MatchCenterPage';
 import { checkApiHealth } from './services/api';
 
 export default function App() {
@@ -60,6 +61,7 @@ export default function App() {
           <Route path="teams" element={<TeamsPage />} />
           <Route path="players" element={<PlayersPage />} />
           <Route path="matches" element={<MatchesPage />} />
+          <Route path="matches/:id/manage" element={<MatchCenterPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
