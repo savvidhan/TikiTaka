@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { getDatabaseState } from './config/database.js';
 import playerRoutes from './routes/playerRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
+import matchRoutes from './routes/matchRoutes.js';
 
 const app = express();
 
@@ -68,6 +69,7 @@ app.get('/api/health', (req, res) => {
 // API Resource Routes
 app.use('/api/players', playerRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/matches', matchRoutes);
 
 // Root welcome endpoint
 app.get('/', (req, res) => {
@@ -78,7 +80,8 @@ app.get('/', (req, res) => {
     health: '/api/health',
     endpoints: {
       players: '/api/players',
-      teams: '/api/teams'
+      teams: '/api/teams',
+      matches: '/api/matches'
     }
   });
 });
