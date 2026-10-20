@@ -158,7 +158,7 @@ const matchSchema = new mongoose.Schema(
 matchSchema.pre('validate', function (next) {
   // 1. Home and Away teams must be distinct
   if (this.homeTeam && this.awayTeam && this.homeTeam.toString() === this.awayTeam.toString()) {
-    return next(new Error('Home team and away team must be different'));
+    this.invalidate('awayTeam', 'Home team and away team must be different');
   }
 
   // 2. Goal records must belong to either homeTeam or awayTeam
@@ -170,9 +170,11 @@ matchSchema.pre('validate', function (next) {
       if (goal.team) {
         const goalTeamId = goal.team.toString();
         if (goalTeamId !== homeId && goalTeamId !== awayId) {
-          return next(
-            new Error('Goal team must be either the designated home team or away team')
+          this.invalidate(
+            'goals',
+            'Goal team must be either the designated home team or away team'
           );
+          break;
         }
       }
     }

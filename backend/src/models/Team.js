@@ -91,7 +91,7 @@ teamSchema.pre('validate', function (next) {
     const playerIds = this.roster.map((r) => r.player?.toString()).filter(Boolean);
     const uniquePlayerIds = new Set(playerIds);
     if (playerIds.length !== uniquePlayerIds.size) {
-      return next(new Error('A player cannot appear more than once in a team roster'));
+      this.invalidate('roster', 'A player cannot appear more than once in a team roster');
     }
 
     // 2. Prevent duplicate jersey numbers within a team when assigned
@@ -100,7 +100,7 @@ teamSchema.pre('validate', function (next) {
       .filter((jn) => jn !== undefined && jn !== null);
     const uniqueJerseys = new Set(jerseyNumbers);
     if (jerseyNumbers.length !== uniqueJerseys.size) {
-      return next(new Error('Jersey numbers must be unique within a team'));
+      this.invalidate('roster', 'Jersey numbers must be unique within a team');
     }
 
     // 3. Ensure a team captain is a member of the roster when assigned
@@ -110,8 +110,9 @@ teamSchema.pre('validate', function (next) {
         (r) => r.player && r.player.toString() === captainIdStr
       );
       if (!isCaptainInRoster) {
-        return next(
-          new Error('The assigned team captain must be a registered member of the roster')
+        this.invalidate(
+          'captain',
+          'The assigned team captain must be a registered member of the roster'
         );
       }
     }

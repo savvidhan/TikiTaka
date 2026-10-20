@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { getDatabaseState } from './config/database.js';
+import playerRoutes from './routes/playerRoutes.js';
+import teamRoutes from './routes/teamRoutes.js';
 
 const app = express();
 
@@ -63,13 +65,21 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// API Resource Routes
+app.use('/api/players', playerRoutes);
+app.use('/api/teams', teamRoutes);
+
 // Root welcome endpoint
 app.get('/', (req, res) => {
   res.json({
     name: 'TikiTaka API',
     description: 'Football team, match, and live score management system',
     status: 'online',
-    health: '/api/health'
+    health: '/api/health',
+    endpoints: {
+      players: '/api/players',
+      teams: '/api/teams'
+    }
   });
 });
 
@@ -83,14 +93,37 @@ app.use((req, res, next) => {
 
 // Centralized error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled Error:', err);
+  // 1. Mongoose Duplicate Key Error (e.g. unique team name)
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyValue || {})[0] || 'field';
+    return res.status(409).json({
+      success: false,
+      message: `Conflict: A record with that ${field} already exists.`
+    });
+  }
 
-  const statusCode = err.statusCode || (err.name === 'ValidationError' ? 400 : 500);
+  // 2. Mongoose Schema Validation Error
+  if (err.name === 'ValidationError') {
+    const messages = Object.values(err.errors).map((val) => val.message);
+    return res.status(400).json({
+      success: false,
+      message: messages.join('. ')
+    });
+  }
 
+  // 3. Mongoose CastError (e.g. invalid ObjectId format)
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid format for field "${err.path}".`
+    });
+  }
+
+  // 4. Custom App or Generic Error
+  const statusCode = err.statusCode || (err.message && err.message.includes('must be') ? 400 : 500);
   res.status(statusCode).json({
     success: false,
-    message: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+    message: err.message || 'Internal Server Error'
   });
 });
 
