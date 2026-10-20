@@ -41,8 +41,9 @@ export default function LandingPage({ healthState, onRefreshHealth, isCheckingHe
         icon: CheckCircle2
       };
     }
+    const dbMsg = healthState?.details?.database?.message || healthState?.dbStatus || 'Disconnected';
     return {
-      text: `MongoDB: ${healthState?.dbStatus || 'Disconnected'} (Needs URI in .env)`,
+      text: `MongoDB: ${dbMsg}`,
       classes: 'bg-amber-950/80 text-amber-300 border-amber-500/40',
       icon: AlertCircle
     };
@@ -168,14 +169,23 @@ export default function LandingPage({ healthState, onRefreshHealth, isCheckingHe
               </div>
             </div>
 
-            {/* Notice banner if MongoDB URI is pending */}
+            {/* Notice banner if MongoDB URI is pending or connection failed */}
             {!healthState?.isDbConnected && healthState?.isReachable && (
               <div className="mt-5 p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200/90 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-semibold text-amber-300">Backend API is alive, but MongoDB is not connected yet.</p>
                   <p className="mt-1 text-slate-300">
-                    This is expected for a fresh workspace without user credentials. To connect your database, paste your MongoDB Atlas connection string (or local URI) into <code className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono">backend/.env</code> under <code className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono">MONGODB_URI</code>.
+                    {healthState?.details?.database?.message ? (
+                      <>
+                        <span className="text-amber-200 font-semibold">Diagnostic: </span>
+                        {healthState.details.database.message}. Please check your database user permissions or password in MongoDB Atlas.
+                      </>
+                    ) : (
+                      <>
+                        Please verify your MongoDB Atlas connection string in <code className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono">backend/.env</code> under <code className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono">MONGODB_URI</code>.
+                      </>
+                    )}
                   </p>
                 </div>
               </div>

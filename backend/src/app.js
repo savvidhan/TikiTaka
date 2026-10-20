@@ -57,7 +57,8 @@ app.get('/api/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     database: {
       status: dbState.status,
-      connected: dbState.isConnected
+      connected: dbState.isConnected,
+      ...(dbState.message ? { message: dbState.message } : {})
     }
   });
 });
