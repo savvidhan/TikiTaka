@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Navbar from './components/layout/Navbar';
-import Footer from './components/layout/Footer';
-import LandingPage from './pages/LandingPage';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import AppLayout from './components/layout/AppLayout';
+import DashboardPage from './pages/DashboardPage';
+import TeamsPage from './pages/TeamsPage';
+import PlayersPage from './pages/PlayersPage';
+import MatchesPage from './pages/MatchesPage';
 import { checkApiHealth } from './services/api';
 
 export default function App() {
@@ -42,30 +44,25 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans">
-        <Navbar 
-          healthState={healthState} 
-          onRefreshHealth={performHealthCheck} 
-          isCheckingHealth={isCheckingHealth} 
-        />
-        
-        <div className="flex-1">
-          <Routes>
-            <Route 
-              path="/" 
-              element={
-                <LandingPage 
-                  healthState={healthState} 
-                  onRefreshHealth={performHealthCheck} 
-                  isCheckingHealth={isCheckingHealth} 
-                />
-              } 
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <AppLayout
+              healthState={healthState}
+              onRefreshHealth={performHealthCheck}
+              isCheckingHealth={isCheckingHealth}
             />
-          </Routes>
-        </div>
-
-        <Footer />
-      </div>
+          }
+        >
+          {/* Main platform routes */}
+          <Route index element={<DashboardPage healthState={healthState} />} />
+          <Route path="teams" element={<TeamsPage />} />
+          <Route path="players" element={<PlayersPage />} />
+          <Route path="matches" element={<MatchesPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
     </BrowserRouter>
   );
 }

@@ -2,23 +2,27 @@
  * Centralized TikiTaka API Client
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:5000/api';
 
 /**
  * Universal fetch wrapper with error handling and JSON normalization
  */
 export async function apiClient(endpoint, options = {}) {
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${cleanEndpoint}`;
 
   const defaultHeaders = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
-    ...options.headers,
+    ...options.headers
   };
 
   const config = {
     ...options,
-    headers: defaultHeaders,
+    headers: defaultHeaders
   };
 
   try {
@@ -35,7 +39,6 @@ export async function apiClient(endpoint, options = {}) {
 
     return data;
   } catch (error) {
-    // Enhance error for callers
     if (!error.status) {
       error.isNetworkError = true;
     }
@@ -52,7 +55,7 @@ export async function checkApiHealth() {
     const response = await fetch(`${API_BASE_URL}/health`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000) // 5s timeout
+      signal: AbortSignal.timeout(5000)
     });
 
     const latency = Math.round(performance.now() - startTime);
@@ -74,6 +77,7 @@ export async function checkApiHealth() {
       serverStatus: data.status || 'ok',
       dbStatus: data.database?.status || 'unknown',
       isDbConnected: !!data.database?.connected,
+      dbMessage: data.database?.message,
       latency,
       details: data
     };
@@ -85,9 +89,83 @@ export async function checkApiHealth() {
       serverStatus: 'offline',
       dbStatus: 'unreachable',
       latency,
-      error: error.name === 'TimeoutError' ? 'Connection timed out after 5s' : (error.message || 'Network error')
+      error: error.name === 'TimeoutError' ? 'Connection timed out after 5s' : error.message || 'Network error'
     };
   }
+}
+
+// ==========================================
+// TEAMS API METHODS
+// ==========================================
+export async function getTeams(params = {}) {
+  const query = new URLSearchParams();
+  if (params.search) query.append('search', params.search);
+  if (params.isActive !== undefined && params.isActive !== '') query.append('isActive', params.isActive);
+
+  const queryString = query.toString() ? `?${query.toString()}` : '';
+  return apiClient(`/teams${queryString}`);
+}
+
+export async function getTeamById(id) {
+  return apiClient(`/teams/${id}`);
+}
+
+// ==========================================
+// PLAYERS API METHODS
+// ==========================================
+export async function getPlayers(params = {}) {
+  const query = new URLSearchParams();
+  if (params.search) query.append('search', params.search);
+  if (params.position) query.append('position', params.position);
+  if (params.foot) query.append('foot', params.foot);
+  if (params.isActive !== undefined && params.isActive !== '') query.append('isActive', params.isActive);
+
+  const queryString = query.toString() ? `?${query.toString()}` : '';
+  return apiClient(`/players${queryString}`);
+}
+
+export async function getPlayerById(id) {
+  return apiClient(`/players/${id}`);
+}
+
+// ==========================================
+// MATCHES API METHODS
+// ==========================================
+export async function getMatches(params = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.append('status', params.status);
+  if (params.team) query.append('team', params.team);
+  if (params.matchType) query.append('matchType', params.matchType);
+  if (params.page) query.append('page', params.page);
+  if (params.limit) query.append('limit', params.limit);
+
+  const queryString = query.toString() ? `?${query.toString()}` : '';
+  return apiClient(`/matches${queryString}`);
+}
+
+export async function getMatchById(id) {
+  return apiClient(`/matches/${id}`);
+}
+
+// ==========================================
+// DASHBOARD AGGREGATED STATS
+// ==========================================
+export async function getDashboardStats() {
+  const [teamsRes, playersRes, scheduledMatchesRes, completedMatchesRes, recentMatchesRes] = await Promise.all([
+    getTeams({ isActive: 'true' }).catch(() => ({ data: [] })),
+    getPlayers({ isActive: 'true' }).catch(() => ({ data: [] })),
+    getMatches({ status: 'Scheduled', limit: 1 }).catch(() => ({ total: 0 })),
+    getMatches({ status: 'Completed', limit: 1 }).catch(() => ({ total: 0 })),
+    getMatches({ limit: 5 }).catch(() => ({ data: [] }))
+  ]);
+
+  return {
+    totalTeams: teamsRes.count ?? (Array.isArray(teamsRes.data) ? teamsRes.data.length : 0),
+    totalPlayers: playersRes.count ?? (Array.isArray(playersRes.data) ? playersRes.data.length : 0),
+    upcomingMatchesCount: scheduledMatchesRes.total ?? 0,
+    completedMatchesCount: completedMatchesRes.total ?? 0,
+    recentMatches: recentMatchesRes.data || []
+  };
 }
 
 export default apiClient;
