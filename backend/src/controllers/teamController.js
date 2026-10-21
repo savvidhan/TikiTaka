@@ -142,6 +142,19 @@ export const createTeam = async (req, res, next) => {
       }
     }
 
+    // Determine manager: TeamManager is always assigned to self; ignore client-supplied owner fields.
+    // Admin may assign a manager or default to the authenticated user.
+    let managerId = req.user._id;
+    if (req.user.role === 'Admin' && req.body.manager) {
+      if (!mongoose.Types.ObjectId.isValid(req.body.manager)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid manager ObjectId format.'
+        });
+      }
+      managerId = req.body.manager;
+    }
+
     const newTeam = new Team({
       name,
       shortName,
@@ -149,6 +162,7 @@ export const createTeam = async (req, res, next) => {
       logoUrl,
       homeGround,
       captain,
+      manager: managerId,
       roster: roster || [],
       isActive
     });
@@ -185,6 +199,17 @@ export const updateTeam = async (req, res, next) => {
       });
     }
 
+    // Ownership check: Admin can update any team; TeamManager can only update their own team.
+    // Legacy teams with null/missing manager can only be modified by Admin.
+    if (req.user.role !== 'Admin') {
+      if (!team.manager || team.manager.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to manage this team.'
+        });
+      }
+    }
+
     // 1. Verify existence of any updated player references
     const playersToCheck = [];
     if (Array.isArray(req.body.roster)) {
@@ -206,7 +231,7 @@ export const updateTeam = async (req, res, next) => {
       }
     }
 
-    // 2. Assign updatable fields
+    // 2. Assign updatable fields (TeamManager cannot transfer ownership or modify manager)
     const updatableFields = [
       'name',
       'shortName',
@@ -217,6 +242,16 @@ export const updateTeam = async (req, res, next) => {
       'roster',
       'isActive'
     ];
+
+    if (req.user.role === 'Admin' && req.body.manager !== undefined) {
+      if (req.body.manager && !mongoose.Types.ObjectId.isValid(req.body.manager)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid manager ObjectId format.'
+        });
+      }
+      team.manager = req.body.manager || null;
+    }
 
     for (const field of updatableFields) {
       if (req.body[field] !== undefined) {
@@ -256,6 +291,16 @@ export const deleteTeam = async (req, res, next) => {
       });
     }
 
+    // Ownership check: Admin can delete any team; TeamManager can only delete their own team.
+    // Legacy teams with null/missing manager can only be deleted by Admin.
+    if (req.user.role !== 'Admin') {
+      if (!team.manager || team.manager.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to delete this team.'
+        });
+      }
+    }
     // Check if team is referenced in any scheduled or completed matches
     const isReferencedInMatch = await Match.exists({
       $or: [{ homeTeam: id }, { awayTeam: id }]
@@ -281,6 +326,9 @@ export const deleteTeam = async (req, res, next) => {
 
     // If not referenced in any matches, perform safe document deletion
     await Team.findByIdAndDelete(id);
+    if (mongoose.connection?.readyState === 1 || Player.updateMany?.mock) {
+      await Player.updateMany({ team: id }, { $set: { team: null } });
+    }
 
     res.status(200).json({
       success: true,

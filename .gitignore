@@ -38,3 +38,7 @@ coverage/
 # Scratch & temporary files
 tmp/
 temp/
+
+# All environment files (except safe examples)
+.env.*
+!.env.example

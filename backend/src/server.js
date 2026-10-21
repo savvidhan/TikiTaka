@@ -3,12 +3,19 @@ dotenv.config();
 
 import app from './app.js';
 import { connectDatabase, disconnectDatabase } from './config/database.js';
+import { getJwtSecret } from './utils/jwt.js';
 
 const PORT = process.env.PORT || 5000;
 
 // Attempt database connection first before accepting requests
 const startServer = async () => {
   console.log('⚽ Starting TikiTaka Backend API Server...');
+
+  // Fail-fast security validation in production
+  if (process.env.NODE_ENV === 'production') {
+    getJwtSecret();
+  }
+
   await connectDatabase();
 
   const server = app.listen(PORT, () => {

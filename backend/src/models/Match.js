@@ -147,6 +147,16 @@ const matchSchema = new mongoose.Schema(
     goals: {
       type: [goalSubSchema],
       default: []
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    referee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
     }
   },
   {
@@ -188,6 +198,8 @@ matchSchema.index({ scheduledAt: 1, status: 1 });
 matchSchema.index({ homeTeam: 1 });
 matchSchema.index({ awayTeam: 1 });
 matchSchema.index({ status: 1 });
+matchSchema.index({ createdBy: 1 });
+matchSchema.index({ referee: 1 });
 
 const Match = mongoose.models.Match || mongoose.model('Match', matchSchema);
 

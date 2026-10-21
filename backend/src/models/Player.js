@@ -67,6 +67,11 @@ const playerSchema = new mongoose.Schema(
       trim: true,
       maxlength: [25, 'Phone number cannot exceed 25 characters']
     },
+    team: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Team',
+      default: null
+    },
     isActive: {
       type: Boolean,
       default: true
@@ -89,6 +94,7 @@ playerSchema.pre('validate', function (next) {
 playerSchema.index({ lastName: 1, firstName: 1 });
 playerSchema.index({ primaryPosition: 1 });
 playerSchema.index({ isActive: 1 });
+playerSchema.index({ team: 1 });
 
 const Player = mongoose.models.Player || mongoose.model('Player', playerSchema);
 

@@ -1,4 +1,21 @@
+import mongoose from 'mongoose';
 import { Player, Team, Match } from '../models/index.js';
+
+/**
+ * Helper to fetch all teams associated with a player (either via player.team or roster membership)
+ * @param {string|mongoose.Types.ObjectId} playerId
+ * @param {string|mongoose.Types.ObjectId} [primaryTeamId]
+ * @returns {Promise<Array<import('mongoose').Document>>}
+ */
+const getAssociatedTeamsForPlayer = async (playerId, primaryTeamId = null) => {
+  const query = {
+    $or: [{ 'roster.player': playerId }]
+  };
+  if (primaryTeamId && mongoose.Types.ObjectId.isValid(primaryTeamId)) {
+    query.$or.push({ _id: primaryTeamId });
+  }
+  return Team.find(query);
+};
 
 /**
  * @desc    List all players with optional search and filters
@@ -99,8 +116,59 @@ export const createPlayer = async (req, res, next) => {
       preferredFoot,
       profileImageUrl,
       phone,
+      team: teamRef,
+      teamId: altTeamRef,
       isActive
     } = req.body;
+
+    const requestedTeamId = teamRef || altTeamRef;
+    let validatedTeam = null;
+
+    // TeamManager must provide a team they own
+    if (req.user.role === 'TeamManager') {
+      if (!requestedTeamId) {
+        return res.status(400).json({
+          success: false,
+          message: 'A valid team reference is required when creating a player as a team manager.'
+        });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(requestedTeamId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid team ObjectId format.'
+        });
+      }
+
+      validatedTeam = await Team.findById(requestedTeamId);
+      if (!validatedTeam) {
+        return res.status(400).json({
+          success: false,
+          message: 'Referenced team does not exist.'
+        });
+      }
+
+      if (!validatedTeam.manager || validatedTeam.manager.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You can only create player profiles for teams you manage.'
+        });
+      }
+    } else if (req.user.role === 'Admin' && requestedTeamId) {
+      if (!mongoose.Types.ObjectId.isValid(requestedTeamId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid team ObjectId format.'
+        });
+      }
+      validatedTeam = await Team.findById(requestedTeamId);
+      if (!validatedTeam) {
+        return res.status(400).json({
+          success: false,
+          message: 'Referenced team does not exist.'
+        });
+      }
+    }
 
     const newPlayer = new Player({
       firstName,
@@ -112,10 +180,25 @@ export const createPlayer = async (req, res, next) => {
       preferredFoot,
       profileImageUrl,
       phone,
+      team: validatedTeam ? validatedTeam._id : null,
       isActive
     });
 
     const savedPlayer = await newPlayer.save();
+
+    // If affiliated with a team on creation, ensure player is enrolled in team roster
+    if (validatedTeam) {
+      const alreadyInRoster = validatedTeam.roster.some(
+        (r) => r.player && r.player.toString() === savedPlayer._id.toString()
+      );
+      if (!alreadyInRoster) {
+        validatedTeam.roster.push({
+          player: savedPlayer._id,
+          role: savedPlayer.primaryPosition || 'Utility'
+        });
+        await validatedTeam.save();
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -141,6 +224,137 @@ export const updatePlayer = async (req, res, next) => {
         success: false,
         message: 'Player not found'
       });
+    }
+
+    // Ownership check: Admin can update any player; TeamManager can only update players on their teams
+    if (req.user.role !== 'Admin') {
+      const associatedTeams = await getAssociatedTeamsForPlayer(player._id, player.team);
+      if (associatedTeams.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Forbidden: Player has no associated team or belongs to an unmanaged roster. Only Admins can modify unassociated players.'
+        });
+      }
+
+      // If player is affiliated with any team not managed by req.user, deny
+      const hasUnownedTeam = associatedTeams.some(
+        (t) => !t.manager || t.manager.toString() !== req.user._id.toString()
+      );
+      if (hasUnownedTeam) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Forbidden: You do not have permission to modify a player affiliated with a team you do not manage.'
+        });
+      }
+
+      // Check team transfer attempt
+      const targetTeamId = req.body.team !== undefined ? req.body.team : req.body.teamId;
+      if (targetTeamId !== undefined) {
+        if (!targetTeamId) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: Only administrators can release players into unassigned/free-agent status.'
+          });
+        }
+        if (!mongoose.Types.ObjectId.isValid(targetTeamId)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid target team ObjectId format.'
+          });
+        }
+        const targetTeam = await Team.findById(targetTeamId);
+        if (!targetTeam) {
+          return res.status(400).json({
+            success: false,
+            message: 'Target team does not exist.'
+          });
+        }
+        if (!targetTeam.manager || targetTeam.manager.toString() !== req.user._id.toString()) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: Cannot transfer player to a team you do not manage.'
+          });
+        }
+
+        // Synchronize transfer across rosters
+        if (mongoose.connection?.readyState === 1 || Team.updateMany?.mock) {
+          await Team.updateMany(
+            { _id: { $ne: targetTeam._id }, 'roster.player': player._id },
+            { $pull: { roster: { player: player._id } } }
+          );
+          await Team.updateMany(
+            { _id: { $ne: targetTeam._id }, captain: player._id },
+            { $unset: { captain: '' } }
+          );
+        }
+
+        const inTarget = targetTeam.roster.some(
+          (r) => r.player && r.player.toString() === player._id.toString()
+        );
+        if (!inTarget) {
+          targetTeam.roster.push({
+            player: player._id,
+            role: player.primaryPosition || 'Utility'
+          });
+          await targetTeam.save();
+        }
+        player.team = targetTeam._id;
+      }
+    } else if (req.user.role === 'Admin' && (req.body.team !== undefined || req.body.teamId !== undefined)) {
+      const targetTeamId = req.body.team !== undefined ? req.body.team : req.body.teamId;
+      if (targetTeamId) {
+        if (!mongoose.Types.ObjectId.isValid(targetTeamId)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid target team ObjectId format.'
+          });
+        }
+        const targetTeam = await Team.findById(targetTeamId);
+        if (!targetTeam) {
+          return res.status(400).json({
+            success: false,
+            message: 'Target team does not exist.'
+          });
+        }
+
+        if (mongoose.connection?.readyState === 1 || Team.updateMany?.mock) {
+          await Team.updateMany(
+            { _id: { $ne: targetTeam._id }, 'roster.player': player._id },
+            { $pull: { roster: { player: player._id } } }
+          );
+          await Team.updateMany(
+            { _id: { $ne: targetTeam._id }, captain: player._id },
+            { $unset: { captain: '' } }
+          );
+        }
+
+        const inTarget = targetTeam.roster.some(
+          (r) => r.player && r.player.toString() === player._id.toString()
+        );
+        if (!inTarget) {
+          targetTeam.roster.push({
+            player: player._id,
+            role: player.primaryPosition || 'Utility'
+          });
+          await targetTeam.save();
+        }
+        player.team = targetTeam._id;
+      } else {
+        // Admin releasing player to free agency (null)
+        if (mongoose.connection?.readyState === 1 || Team.updateMany?.mock) {
+          await Team.updateMany(
+            { 'roster.player': player._id },
+            { $pull: { roster: { player: player._id } } }
+          );
+          await Team.updateMany(
+            { captain: player._id },
+            { $unset: { captain: '' } }
+          );
+        }
+        player.team = null;
+      }
     }
 
     // Allowed updatable fields
@@ -189,6 +403,29 @@ export const deletePlayer = async (req, res, next) => {
         success: false,
         message: 'Player not found'
       });
+    }
+
+    // Ownership check: Admin can delete any player; TeamManager can only delete players on their teams
+    if (req.user.role !== 'Admin') {
+      const associatedTeams = await getAssociatedTeamsForPlayer(player._id, player.team);
+      if (associatedTeams.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Forbidden: Legacy or unassociated players can only be deleted by an Admin.'
+        });
+      }
+
+      const hasUnownedTeam = associatedTeams.some(
+        (t) => !t.manager || t.manager.toString() !== req.user._id.toString()
+      );
+      if (hasUnownedTeam) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Forbidden: You do not have permission to delete a player affiliated with a team you do not manage.'
+        });
+      }
     }
 
     // Check if player is referenced in any team rosters or as a captain

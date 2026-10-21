@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   Trophy, 
   Calendar, 
@@ -26,6 +27,8 @@ import MatchFormModal from '../components/matches/MatchFormModal';
 
 export default function MatchesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, isAdmin, isTeamManager } = useAuth();
 
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -98,18 +101,51 @@ export default function MatchesPage() {
   };
 
   const handleOpenScheduleForm = () => {
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'Only Team Managers and Admins can schedule match fixtures. Spectators have read-only access.'
+      });
+      return;
+    }
     setEditingMatch(null);
     setIsFormOpen(true);
   };
 
   const handleOpenEditForm = (match, e) => {
     if (e) e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'Only Team Managers and Admins can edit match fixtures.'
+      });
+      return;
+    }
     setEditingMatch(match);
     setIsFormOpen(true);
   };
 
   const handlePromptDelete = (match, e) => {
     if (e) e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'Only Team Managers and Admins can delete match fixtures.'
+      });
+      return;
+    }
     setMatchToDelete(match);
   };
 

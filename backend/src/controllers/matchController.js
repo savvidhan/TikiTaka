@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Match, Team, Player } from '../models/index.js';
+import { Match, Team, Player, User } from '../models/index.js';
 import { matchStatusEnum, matchTypeEnum, goalTypeEnum } from '../models/Match.js';
 
 /**
@@ -194,10 +194,54 @@ export const createMatch = async (req, res, next) => {
       });
     }
 
-    // 4. Default venue to home ground if omitted
+    // 4. TeamManager ownership check: must manage both home and away teams
+    if (req.user.role === 'TeamManager') {
+      const homeOwned = home.manager && home.manager.toString() === req.user._id.toString();
+      const awayOwned = away.manager && away.manager.toString() === req.user._id.toString();
+      if (!homeOwned || !awayOwned) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Forbidden: Team managers can only schedule matches between teams they manage. You do not manage one or both of the designated teams.'
+        });
+      }
+    }
+
+    // 5. Admin referee assignment (only Admin can assign referee; ignored for TeamManager)
+    let assignedReferee = null;
+    if (req.user.role === 'Admin' && req.body.referee) {
+      if (!mongoose.Types.ObjectId.isValid(req.body.referee)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid referee ObjectId format.'
+        });
+      }
+      const refUser = await User.findById(req.body.referee);
+      if (!refUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Referenced referee user does not exist.'
+        });
+      }
+      if (refUser.role !== 'Referee') {
+        return res.status(400).json({
+          success: false,
+          message: `User "${refUser.name}" has role "${refUser.role}" and cannot be assigned as a match referee. Only users with the "Referee" role can officiate matches.`
+        });
+      }
+      if (refUser.isActive === false) {
+        return res.status(400).json({
+          success: false,
+          message: `Referee "${refUser.name}" is inactive and cannot be assigned to matches.`
+        });
+      }
+      assignedReferee = refUser._id;
+    }
+
+    // 6. Default venue to home ground if omitted
     const matchVenue = venue?.trim() || home.homeGround || 'TBD Ground';
 
-    // 5. Initialize fixture with clean state (ignore arbitrary client scores/goals)
+    // 7. Initialize fixture with clean state, server-derived createdBy, and optional referee
     const newMatch = new Match({
       title,
       homeTeam,
@@ -211,7 +255,9 @@ export const createMatch = async (req, res, next) => {
       status: 'Scheduled',
       homeScore: 0,
       awayScore: 0,
-      goals: []
+      goals: [],
+      createdBy: req.user._id,
+      referee: assignedReferee
     });
 
     const savedMatch = await newMatch.save();
@@ -258,6 +304,105 @@ export const updateMatch = async (req, res, next) => {
         success: false,
         message: 'Cannot reschedule a live match'
       });
+    }
+
+    // Ownership check: TeamManager must manage both participating teams
+    if (req.user.role === 'TeamManager') {
+      const homeId = match.homeTeam?._id || match.homeTeam;
+      const awayId = match.awayTeam?._id || match.awayTeam;
+      const [currentHome, currentAway] = await Promise.all([
+        Team.findById(homeId),
+        Team.findById(awayId)
+      ]);
+      const ownsHome = currentHome?.manager && currentHome.manager.toString() === req.user._id.toString();
+      const ownsAway = currentAway?.manager && currentAway.manager.toString() === req.user._id.toString();
+      if (!ownsHome || !ownsAway) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to modify this match fixture.'
+        });
+      }
+
+      // If updating homeTeam or awayTeam, verify new team references are also owned by this TeamManager
+      if (req.body.homeTeam || req.body.awayTeam) {
+        const newHomeId = req.body.homeTeam || homeId;
+        const newAwayId = req.body.awayTeam || awayId;
+        if (newHomeId.toString() === newAwayId.toString()) {
+          return res.status(400).json({
+            success: false,
+            message: 'Home team and away team must be different'
+          });
+        }
+        const [newHome, newAway] = await Promise.all([
+          Team.findById(newHomeId),
+          Team.findById(newAwayId)
+        ]);
+        if (!newHome || !newAway) {
+          return res.status(400).json({
+            success: false,
+            message: 'Designated home or away team does not exist'
+          });
+        }
+        const ownsNewHome = newHome.manager && newHome.manager.toString() === req.user._id.toString();
+        const ownsNewAway = newAway.manager && newAway.manager.toString() === req.user._id.toString();
+        if (!ownsNewHome || !ownsNewAway) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: Cannot assign a team you do not manage to this fixture.'
+          });
+        }
+        match.homeTeam = newHomeId;
+        match.awayTeam = newAwayId;
+      }
+    } else if (req.user.role === 'Admin') {
+      // Admin referee assignment
+      if (req.body.referee !== undefined) {
+        if (req.body.referee) {
+          if (!mongoose.Types.ObjectId.isValid(req.body.referee)) {
+            return res.status(400).json({
+              success: false,
+              message: 'Invalid referee ObjectId format.'
+            });
+          }
+          const refUser = await User.findById(req.body.referee);
+          if (!refUser) {
+            return res.status(400).json({
+              success: false,
+              message: 'Referenced referee user does not exist.'
+            });
+          }
+          if (refUser.role !== 'Referee') {
+            return res.status(400).json({
+              success: false,
+              message: `User "${refUser.name}" has role "${refUser.role}" and cannot be assigned as a match referee. Only users with the "Referee" role can officiate matches.`
+            });
+          }
+          if (refUser.isActive === false) {
+            return res.status(400).json({
+              success: false,
+              message: `Referee "${refUser.name}" is inactive and cannot be assigned to matches.`
+            });
+          }
+          match.referee = refUser._id;
+        } else {
+          match.referee = null;
+        }
+      }
+
+      if (req.body.homeTeam || req.body.awayTeam) {
+        const homeId = match.homeTeam?._id || match.homeTeam;
+        const awayId = match.awayTeam?._id || match.awayTeam;
+        const newHomeId = req.body.homeTeam || homeId;
+        const newAwayId = req.body.awayTeam || awayId;
+        if (newHomeId.toString() === newAwayId.toString()) {
+          return res.status(400).json({
+            success: false,
+            message: 'Home team and away team must be different'
+          });
+        }
+        match.homeTeam = newHomeId;
+        match.awayTeam = newAwayId;
+      }
     }
 
     // Allowed updatable metadata fields (prevent modifying scores/goals directly)
@@ -336,6 +481,66 @@ export const updateMatchStatus = async (req, res, next) => {
       });
     }
 
+    // Role, Ownership, and Referee Assignment checks
+    if (targetStatus === 'Live' || targetStatus === 'Completed') {
+      if (req.user.role === 'Referee') {
+        if (!match.referee || match.referee.toString() !== req.user._id.toString()) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You are not the assigned referee for this match.'
+          });
+        }
+      }
+    } else if (targetStatus === 'Cancelled') {
+      if (req.user.role === 'Referee') {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Referees are not authorized to cancel matches.'
+        });
+      }
+      if (req.user.role === 'TeamManager') {
+        if (currentStatus !== 'Scheduled') {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: Team managers can only cancel scheduled matches before kickoff.'
+          });
+        }
+        let home = match.homeTeam;
+        let away = match.awayTeam;
+        const homeManagerId = home?.manager?._id || home?.manager;
+        const awayManagerId = away?.manager?._id || away?.manager;
+        if (!homeManagerId || !awayManagerId) {
+          const homeId = home?._id || home;
+          const awayId = away?._id || away;
+          if (
+            !homeId ||
+            !awayId ||
+            !mongoose.Types.ObjectId.isValid(homeId) ||
+            !mongoose.Types.ObjectId.isValid(awayId)
+          ) {
+            return res.status(403).json({
+              success: false,
+              message: 'Forbidden: You can only cancel matches for teams you manage.'
+            });
+          }
+          [home, away] = await Promise.all([
+            Team.findById(homeId),
+            Team.findById(awayId)
+          ]);
+        }
+        const ownsHome =
+          (home?.manager?._id || home?.manager)?.toString() === req.user._id.toString();
+        const ownsAway =
+          (away?.manager?._id || away?.manager)?.toString() === req.user._id.toString();
+        if (!ownsHome || !ownsAway) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You can only cancel matches for teams you manage.'
+          });
+        }
+      }
+    }
+
     // Apply state side-effects
     match.status = targetStatus;
     if (targetStatus === 'Live' && !match.startedAt) {
@@ -382,6 +587,17 @@ export const recordGoal = async (req, res, next) => {
         success: false,
         message: `Goals can only be recorded when the match is Live. Current status: "${match.status}"`
       });
+    }
+
+    // Referee assignment check: assigned referee or Admin only
+    if (req.user.role === 'Referee') {
+      if (!match.referee || match.referee.toString() !== req.user._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Forbidden: You are not the assigned referee for this match. Only the assigned referee or an administrator can record goals.'
+        });
+      }
     }
 
     // 2. Validate scoring team ID format and match participation
@@ -533,6 +749,50 @@ export const deleteMatch = async (req, res, next) => {
         success: false,
         message: 'Live matches cannot be deleted. Transition match status to "Cancelled" instead.'
       });
+    }
+
+    // Ownership and lifecycle check: TeamManager can only delete scheduled fixtures before kickoff
+    if (req.user.role !== 'Admin') {
+      if (match.status !== 'Scheduled' || match.startedAt) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Team managers can only delete scheduled fixtures before kickoff.'
+        });
+      }
+
+      let home = match.homeTeam;
+      let away = match.awayTeam;
+      const homeManagerId = home?.manager?._id || home?.manager;
+      const awayManagerId = away?.manager?._id || away?.manager;
+      if (!homeManagerId || !awayManagerId) {
+        const homeId = home?._id || home;
+        const awayId = away?._id || away;
+        if (
+          !homeId ||
+          !awayId ||
+          !mongoose.Types.ObjectId.isValid(homeId) ||
+          !mongoose.Types.ObjectId.isValid(awayId)
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You do not have permission to delete this match fixture.'
+          });
+        }
+        [home, away] = await Promise.all([
+          Team.findById(homeId),
+          Team.findById(awayId)
+        ]);
+      }
+      const ownsHome =
+        (home?.manager?._id || home?.manager)?.toString() === req.user._id.toString();
+      const ownsAway =
+        (away?.manager?._id || away?.manager)?.toString() === req.user._id.toString();
+      if (!ownsHome || !ownsAway) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You do not have permission to delete this match fixture.'
+        });
+      }
     }
 
     // Scheduled or Cancelled fixtures can be cleanly removed

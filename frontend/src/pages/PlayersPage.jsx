@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   Users, 
   Search, 
@@ -25,6 +27,9 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import PlayerFormModal from '../components/players/PlayerFormModal';
 
 export default function PlayersPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, isAdmin, isTeamManager } = useAuth();
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -106,18 +111,51 @@ export default function PlayersPage() {
   };
 
   const handleOpenCreateForm = () => {
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'Only Team Managers and Admins can register new players. Spectators have read-only access.'
+      });
+      return;
+    }
     setEditingPlayer(null);
     setIsFormOpen(true);
   };
 
   const handleOpenEditForm = (player, e) => {
     if (e) e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'You must be a Team Manager or Admin to edit player profiles.'
+      });
+      return;
+    }
     setEditingPlayer(player);
     setIsFormOpen(true);
   };
 
   const handlePromptDelete = (player, e) => {
     if (e) e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'You must be a Team Manager or Admin to delete player records.'
+      });
+      return;
+    }
     setPlayerToDelete(player);
   };
 

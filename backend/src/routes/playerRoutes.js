@@ -7,17 +7,18 @@ import {
   deletePlayer
 } from '../controllers/playerController.js';
 import { validateObjectId } from '../middleware/validateObjectId.js';
+import { protect, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 
 router.route('/')
   .get(getPlayers)
-  .post(createPlayer);
+  .post(protect, authorize('Admin', 'TeamManager'), createPlayer);
 
 router.route('/:id')
   .all(validateObjectId('id'))
   .get(getPlayerById)
-  .patch(updatePlayer)
-  .delete(deletePlayer);
+  .patch(protect, authorize('Admin', 'TeamManager'), updatePlayer)
+  .delete(protect, authorize('Admin', 'TeamManager'), deletePlayer);
 
 export default router;

@@ -2,9 +2,14 @@
  * Centralized TikiTaka API Client
  */
 
-const configuredBaseUrl =
+const rawBaseUrl =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL;
+
+let configuredBaseUrl = rawBaseUrl ? rawBaseUrl.trim().replace(/\/+$/, '') : '';
+if (configuredBaseUrl && !configuredBaseUrl.endsWith('/api') && !configuredBaseUrl.includes('/api/')) {
+  configuredBaseUrl = `${configuredBaseUrl}/api`;
+}
 
 // Prevent accidental production builds from silently pointing to localhost:5000
 const isProd = import.meta.env.PROD;
@@ -40,6 +45,7 @@ export async function apiClient(endpoint, options = {}) {
   };
 
   const config = {
+    credentials: 'include',
     ...options,
     headers: defaultHeaders
   };
@@ -272,4 +278,32 @@ export async function getDashboardStats() {
   };
 }
 
+// ==========================================
+// AUTHENTICATION API METHODS
+// ==========================================
+export async function registerUser({ name, email, password, role }) {
+  return apiClient('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password, role })
+  });
+}
+
+export async function loginUser({ email, password }) {
+  return apiClient('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password })
+  });
+}
+
+export async function getCurrentUser() {
+  return apiClient('/auth/me');
+}
+
+export async function logoutUser() {
+  return apiClient('/auth/logout', {
+    method: 'POST'
+  });
+}
+
 export default apiClient;
+

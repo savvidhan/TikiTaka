@@ -2,13 +2,24 @@ import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:t
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import app from '../src/app.js';
-import { Player, Team, Match } from '../src/models/index.js';
+import { Player, Team, Match, User } from '../src/models/index.js';
+import { generateToken } from '../src/utils/jwt.js';
 
 describe('TikiTaka Team & Player REST API Integration Tests', () => {
   let server;
   let baseUrl;
+  let authToken;
+  let authHeaders;
+  let testUserId;
 
   before(async () => {
+    testUserId = new mongoose.Types.ObjectId();
+    authToken = generateToken({ _id: testUserId, role: 'Admin' });
+    authHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`
+    };
+
     // Start Express app on an ephemeral port (isolated test server)
     await new Promise((resolve) => {
       server = app.listen(0, () => {
@@ -26,7 +37,18 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
   });
 
   beforeEach(() => {
-    // Reset mocks before each test
+    const fakeAuthUser = {
+      _id: testUserId,
+      name: 'Test Admin',
+      email: 'admin@tikitaka.com',
+      role: 'Admin',
+      isActive: true
+    };
+    mock.method(User, 'findById', () => ({
+      select: () => Promise.resolve(fakeAuthUser),
+      then: (resolve, reject) => Promise.resolve(fakeAuthUser).then(resolve, reject),
+      catch: (reject) => Promise.resolve(fakeAuthUser).catch(reject)
+    }));
   });
 
   afterEach(() => {
@@ -145,7 +167,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
     it('POST /api/players - should reject player with missing required fields', async () => {
       const res = await fetch(`${baseUrl}/players`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ primaryPosition: 'Forward' })
       });
       const body = await res.json();
@@ -172,7 +194,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
       mock.method(Team, 'exists', async () => ({ _id: new mongoose.Types.ObjectId() }));
       mock.method(Match, 'exists', async () => null);
 
-      const res = await fetch(`${baseUrl}/players/${playerId}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/players/${playerId}`, { method: 'DELETE', headers: authHeaders });
       const body = await res.json();
 
       assert.equal(res.status, 200);
@@ -195,7 +217,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
       mock.method(Match, 'exists', async () => null);
       mock.method(Player, 'findByIdAndDelete', async () => fakePlayerDoc);
 
-      const res = await fetch(`${baseUrl}/players/${playerId}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/players/${playerId}`, { method: 'DELETE', headers: authHeaders });
       const body = await res.json();
 
       assert.equal(res.status, 200);
@@ -269,7 +291,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/teams`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           name: 'Ghost Squad FC',
           roster: [{ player: ghostPlayerId, jerseyNumber: 10, role: 'Forward' }]
@@ -290,7 +312,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/teams`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           name: 'Duplicate Roster FC',
           roster: [
@@ -314,7 +336,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/teams`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           name: 'Clashing Numbers FC',
           roster: [
@@ -338,7 +360,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/teams`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           name: 'Outsider Captain FC',
           captain: captainPlayerId,
@@ -368,7 +390,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
       // Team has matches
       mock.method(Match, 'exists', async () => ({ _id: new mongoose.Types.ObjectId() }));
 
-      const res = await fetch(`${baseUrl}/teams/${teamId}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/teams/${teamId}`, { method: 'DELETE', headers: authHeaders });
       const body = await res.json();
 
       assert.equal(res.status, 200);
@@ -390,7 +412,7 @@ describe('TikiTaka Team & Player REST API Integration Tests', () => {
       mock.method(Match, 'exists', async () => null);
       mock.method(Team, 'findByIdAndDelete', async () => fakeTeamDoc);
 
-      const res = await fetch(`${baseUrl}/teams/${teamId}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/teams/${teamId}`, { method: 'DELETE', headers: authHeaders });
       const body = await res.json();
 
       assert.equal(res.status, 200);

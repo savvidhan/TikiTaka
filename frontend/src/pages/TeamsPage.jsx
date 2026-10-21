@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   Shield, 
   Search, 
@@ -24,6 +26,9 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import TeamFormModal from '../components/teams/TeamFormModal';
 
 export default function TeamsPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, isAdmin, isTeamManager } = useAuth();
   const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -99,12 +104,34 @@ export default function TeamsPage() {
   };
 
   const handleOpenCreateForm = () => {
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'Only Team Managers and Admins can create clubs. Spectators have read-only access.'
+      });
+      return;
+    }
     setEditingTeam(null);
     setIsFormOpen(true);
   };
 
   const handleOpenEditForm = async (team, e) => {
     if (e) e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'You must be a Team Manager or Admin to edit club details.'
+      });
+      return;
+    }
     // Fetch full team with roster before opening edit form
     try {
       const full = await getTeamById(team._id);
@@ -117,6 +144,17 @@ export default function TeamsPage() {
 
   const handlePromptDelete = (team, e) => {
     if (e) e.stopPropagation();
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isAdmin && !isTeamManager) {
+      setFeedback({
+        type: 'error',
+        message: 'You must be a Team Manager or Admin to delete a club.'
+      });
+      return;
+    }
     setTeamToDelete(team);
   };
 

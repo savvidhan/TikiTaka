@@ -70,6 +70,11 @@ const teamSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Player'
     },
+    manager: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
     roster: {
       type: [rosterSubSchema],
       default: []
@@ -125,6 +130,7 @@ teamSchema.pre('validate', function (next) {
 teamSchema.index({ name: 1 }, { unique: true });
 teamSchema.index({ isActive: 1 });
 teamSchema.index({ 'roster.player': 1 });
+teamSchema.index({ manager: 1 });
 
 const Team = mongoose.models.Team || mongoose.model('Team', teamSchema);
 

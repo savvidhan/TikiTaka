@@ -6,6 +6,7 @@ import { getDatabaseState } from './config/database.js';
 import playerRoutes from './routes/playerRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import matchRoutes from './routes/matchRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 
 const app = express();
 
@@ -60,6 +61,26 @@ app.use(
   })
 );
 
+// CSRF & Origin Verification Middleware:
+// For state-changing operations (POST, PUT, PATCH, DELETE), verify that if an Origin
+// header is present, it strictly matches our approved origins list. This defends against
+// cross-site request forgery when cross-origin cookies (SameSite=None) are transmitted,
+// ensuring unapproved origins cannot execute mutations even if CORS preflight is bypassed.
+app.use((req, res, next) => {
+  const mutationMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+  if (mutationMethods.includes(req.method) && req.headers.origin) {
+    const normalizedOrigin = req.headers.origin.trim().replace(/\/+$/, '');
+    const allowedOrigins = getAllowedOrigins();
+    if (!allowedOrigins.includes(normalizedOrigin)) {
+      return res.status(403).json({
+        success: false,
+        message: `Forbidden: Cross-origin request from origin "${req.headers.origin}" is blocked by CSRF / Origin policy.`
+      });
+    }
+  }
+  next();
+});
+
 // Rate limiting: 100 requests per 15 minutes per IP in production (1000 in dev)
 // Excludes the /health endpoint so health monitors and uptime probes are never blocked.
 const apiLimiter = rateLimit({
@@ -100,6 +121,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // API Resource Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/matches', matchRoutes);
@@ -112,6 +134,7 @@ app.get('/', (req, res) => {
     status: 'online',
     health: '/api/health',
     endpoints: {
+      auth: '/api/auth',
       players: '/api/players',
       teams: '/api/teams',
       matches: '/api/matches'
@@ -157,9 +180,16 @@ app.use((err, req, res, next) => {
 
   // 4. Custom App or Generic Error
   const statusCode = err.statusCode || (err.message && err.message.includes('must be') ? 400 : 500);
+  const isProd = process.env.NODE_ENV === 'production';
+  const message = isProd && statusCode === 500 ? 'Internal Server Error' : (err.message || 'Internal Server Error');
+
+  if (statusCode === 500) {
+    console.error('Unhandled Server Error:', err);
+  }
+
   res.status(statusCode).json({
     success: false,
-    message: err.message || 'Internal Server Error'
+    message
   });
 });
 

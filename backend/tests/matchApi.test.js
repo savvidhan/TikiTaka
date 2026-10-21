@@ -1,14 +1,25 @@
-import { describe, it, before, after, afterEach, mock } from 'node:test';
+import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import app from '../src/app.js';
-import { Match, Team, Player } from '../src/models/index.js';
+import { Match, Team, Player, User } from '../src/models/index.js';
+import { generateToken } from '../src/utils/jwt.js';
 
 describe('TikiTaka Match REST API Integration Tests', () => {
   let server;
   let baseUrl;
+  let authToken;
+  let authHeaders;
+  let testUserId;
 
   before(async () => {
+    testUserId = new mongoose.Types.ObjectId();
+    authToken = generateToken({ _id: testUserId, role: 'Admin' });
+    authHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`
+    };
+
     // Start Express app on an ephemeral port for isolated testing
     await new Promise((resolve) => {
       server = app.listen(0, () => {
@@ -23,6 +34,21 @@ describe('TikiTaka Match REST API Integration Tests', () => {
     if (server) {
       await new Promise((resolve) => server.close(resolve));
     }
+  });
+
+  beforeEach(() => {
+    const fakeAuthUser = {
+      _id: testUserId,
+      name: 'Test Admin',
+      email: 'admin@tikitaka.com',
+      role: 'Admin',
+      isActive: true
+    };
+    mock.method(User, 'findById', () => ({
+      select: () => Promise.resolve(fakeAuthUser),
+      then: (resolve, reject) => Promise.resolve(fakeAuthUser).then(resolve, reject),
+      catch: (reject) => Promise.resolve(fakeAuthUser).catch(reject)
+    }));
   });
 
   afterEach(() => {
@@ -201,7 +227,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           title: 'Self Clash',
           homeTeam: sameTeamId,
@@ -230,7 +256,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           title: 'Ghost Team Match',
           homeTeam: homeTeamId,
@@ -264,7 +290,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           title: 'Hawks vs Titans Derby',
           homeTeam: homeTeamId,
@@ -305,7 +331,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches/${matchId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ status: 'Live' })
       });
       const body = await res.json();
@@ -328,7 +354,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches/${matchId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ status: 'Live' })
       });
       const body = await res.json();
@@ -357,7 +383,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches/${matchId}/goals`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           player: new mongoose.Types.ObjectId(),
           team: fakeScheduledMatch.homeTeam,
@@ -388,7 +414,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches/${matchId}/goals`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           player: new mongoose.Types.ObjectId(),
           team: thirdPartyTeamId,
@@ -423,7 +449,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches/${matchId}/goals`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           player: playerId,
           team: homeId,
@@ -456,7 +482,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches/${matchId}/goals`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           player: playerId,
           team: homeId,
@@ -523,7 +549,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       const res = await fetch(`${baseUrl}/matches/${matchId}/goals`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           player: playerId,
           team: homeId,
@@ -555,7 +581,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
 
       mock.method(Match, 'findById', async () => fakeCompletedMatch);
 
-      const res = await fetch(`${baseUrl}/matches/${matchId}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/matches/${matchId}`, { method: 'DELETE', headers: authHeaders });
       const body = await res.json();
 
       assert.equal(res.status, 400);
@@ -574,7 +600,7 @@ describe('TikiTaka Match REST API Integration Tests', () => {
       mock.method(Match, 'findById', async () => fakeScheduledMatch);
       mock.method(Match, 'findByIdAndDelete', async () => fakeScheduledMatch);
 
-      const res = await fetch(`${baseUrl}/matches/${matchId}`, { method: 'DELETE' });
+      const res = await fetch(`${baseUrl}/matches/${matchId}`, { method: 'DELETE', headers: authHeaders });
       const body = await res.json();
 
       assert.equal(res.status, 200);
